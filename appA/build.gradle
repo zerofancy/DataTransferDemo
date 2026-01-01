@@ -3,13 +3,13 @@ plugins {
 }
 
 android {
-    namespace 'top.ntutn.filetransferdemo'
+    namespace 'top.ntutn.appa'
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId "top.ntutn.filetransferdemo"
+        applicationId "top.ntutn.appa"
         minSdk 24
         targetSdk 36
         versionCode 1

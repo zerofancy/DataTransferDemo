@@ -1,4 +1,4 @@
-package top.ntutn.filetransferdemo;
+package top.ntutn.appb;
 
 import android.os.Bundle;
 
