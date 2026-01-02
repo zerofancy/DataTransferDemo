@@ -107,6 +107,8 @@ public class MainActivity extends AppCompatActivity {
             super.onChange(selfChange, uri);
             resultTextView.append("\n列表计算完毕");
             cleanup();
+
+            // todo
         }
     }
 
