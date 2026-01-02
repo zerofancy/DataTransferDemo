@@ -49,7 +49,6 @@ public class AppAContentProvider extends ContentProvider {
     private static final String TAG_DATA = "data";
     private static final String ATTR_BASE_DIR_NAME = "base";
     private static final String ATTR_FILE_PATH = "path";
-    private static final String ATTR_PERMISSION = "permission";
     private static final String ATTR_ALGORITHM = "algorithm";
     private static final String ATTR_CHECKSUM = "checksum";
     private static final String ATTR_RETRY_TIMES = "retry_times";
@@ -118,6 +117,8 @@ public class AppAContentProvider extends ContentProvider {
             try {
                 fos = new FileOutputStream(fileListFile);
                 serializer.setOutput(fos, "UTF-8");
+                // 配置格式化
+                serializer.startDocument("UTF-8", true);
                 serializer.startTag(null, TAG_ROOT);
 
                 walkFilesInfo(TAG_EXTERNAL_FILES, externalFilesDir, externalFilesDir, distinctSet, serializer);
@@ -127,9 +128,7 @@ public class AppAContentProvider extends ContentProvider {
                 walkFilesInfo(TAG_DATA, dataDir, dataDir, distinctSet, serializer);
 
                 serializer.endTag(null, TAG_ROOT);
-
                 serializer.endDocument();
-                serializer.flush();
             } catch (IOException e) {
                 Log.e("lhx", "Writing filelist error", e);
             } finally {
@@ -141,7 +140,9 @@ public class AppAContentProvider extends ContentProvider {
                     }
                 }
 
-                context.getContentResolver().notifyChange(CONTENT_FILE_LIST, null);
+                mainHandler.post(() -> {
+                    context.getContentResolver().notifyChange(CONTENT_FILE_LIST, null);
+                });
             }
         });
     }
@@ -187,13 +188,6 @@ public class AppAContentProvider extends ContentProvider {
                 Log.e("lhx", "path error", e);
                 continue;
             }
-            int permission = 0;
-
-            try {
-                permission = Os.stat(file.getAbsolutePath()).st_mode;
-            } catch (ErrnoException e) {
-                Log.w("lhx", "get permission error", e);
-            }
 
             long fileSize = file.length();
             try {
@@ -201,7 +195,6 @@ public class AppAContentProvider extends ContentProvider {
                         .startTag(null, TAG_FILE) // <file>
                         .attribute(null, ATTR_BASE_DIR_NAME, baseTag) // 安卓中的基础路径名，如files
                         .attribute(null, ATTR_FILE_PATH, relativePath) // 相对路径
-                        .attribute(null, ATTR_PERMISSION, Integer.toString(permission)) // 文件权限
                         .attribute(null, ATTR_ALGORITHM, ALGORITHM_SIZE) // 校验算法
                         .attribute(null, ATTR_CHECKSUM, Long.toString(fileSize))
                         .attribute(null, ATTR_RETRY_TIMES, "5")
