@@ -1,12 +1,10 @@
 package top.ntutn.appb;
 
 import android.database.ContentObserver;
-import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -20,9 +18,9 @@ import androidx.core.view.WindowInsetsCompat;
 import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
-    private static final String METHOD_START_CALCULATION = "start_calculation";
+    private static final String METHOD_GATHER_FILE_LIST = "gather_file_list";
     private static final String AUTHORITY = "top.ntutn.appa.provider";
-    private static final String PATH_CALCULATION_RESULTS = "calculation_results";
+    private static final Uri CONTENT_FILE_LIST = Uri.parse("content://" + AUTHORITY + "/list");
 
     private Button button;
     private TextView resultTextView;
@@ -57,7 +55,7 @@ public class MainActivity extends AppCompatActivity {
                 // Call the calculation method in the ContentProvider
                 Bundle result = getContentResolver().call(
                     uri,
-                    METHOD_START_CALCULATION,
+                        METHOD_GATHER_FILE_LIST,
                     null,
                     args
                 );
@@ -89,12 +87,9 @@ public class MainActivity extends AppCompatActivity {
             getContentResolver().unregisterContentObserver(resultObserver);
         }
 
-        // Create a URI for the specific result we're waiting for
-        Uri resultUri = Uri.parse("content://" + AUTHORITY + "/" + PATH_CALCULATION_RESULTS + "/" + currentRequestId);
-
         // Create and register the ContentObserver
         resultObserver = new CalculationResultObserver(new Handler(Looper.getMainLooper()));
-        getContentResolver().registerContentObserver(resultUri, false, resultObserver);
+        getContentResolver().registerContentObserver(CONTENT_FILE_LIST, false, resultObserver);
 
         // Disable the button while waiting for result
         button.setEnabled(false);
@@ -110,40 +105,8 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onChange(boolean selfChange, Uri uri) {
             super.onChange(selfChange, uri);
-
-            // When this gets called, the result should be ready
-            // Query for the specific result
-            if (currentRequestId != null) {
-                Uri queryUri = Uri.parse("content://" + AUTHORITY + "/" + PATH_CALCULATION_RESULTS + "/" + currentRequestId);
-
-                try {
-                    Cursor cursor = getContentResolver().query(queryUri, null, null, null, null);
-                    if (cursor != null && cursor.moveToFirst()) {
-                        int resultIndex = cursor.getColumnIndex("result");
-                        int statusIndex = cursor.getColumnIndex("status");
-
-                        if (resultIndex != -1 && statusIndex != -1) {
-                            int result = cursor.getInt(resultIndex);
-                            String status = cursor.getString(statusIndex);
-
-                            // Update UI with the result
-                            resultTextView.append("\nFinal Result: " + result);
-                            resultTextView.append("\nCalculation completed successfully!");
-
-                            // Clean up
-                            cursor.close();
-                            cleanup();
-                        }
-                    } else {
-                        // Handle case where query returns no results
-                        resultTextView.append("\nResult not found for request ID: " + currentRequestId);
-                        cleanup();
-                    }
-                } catch (Exception e) {
-                    resultTextView.append("\nError getting result: " + e.getMessage());
-                    cleanup();
-                }
-            }
+            resultTextView.append("\n列表计算完毕");
+            cleanup();
         }
     }
 
