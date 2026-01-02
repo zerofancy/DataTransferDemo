@@ -20,7 +20,6 @@ import androidx.core.view.WindowInsetsCompat;
 import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
-    private static final String METHOD_GET_DATA = "get_data";
     private static final String METHOD_START_CALCULATION = "start_calculation";
     private static final String AUTHORITY = "top.ntutn.appa.provider";
     private static final String PATH_CALCULATION_RESULTS = "calculation_results";
@@ -44,45 +43,42 @@ public class MainActivity extends AppCompatActivity {
         button = findViewById(R.id.button);
         resultTextView = findViewById(R.id.resultTextView);
 
-        button.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                // Use call() method to request calculation from appA
-                Uri uri = Uri.parse("content://" + AUTHORITY);
+        button.setOnClickListener(v -> {
+            // Use call() method to request calculation from appA
+            Uri uri = Uri.parse("content://" + AUTHORITY);
 
-                // Prepare input for the calculation
-                Bundle args = new Bundle();
-                Random random = new Random();
-                int input = 5 + random.nextInt(15); // Random input between 5-20
-                args.putInt("input", input);
+            // Prepare input for the calculation
+            Bundle args = new Bundle();
+            Random random = new Random();
+            int input = 5 + random.nextInt(15); // Random input between 5-20
+            args.putInt("input", input);
 
-                try {
-                    // Call the calculation method in the ContentProvider
-                    android.os.Bundle result = getContentResolver().call(
-                        uri,
-                        METHOD_START_CALCULATION,
-                        null,
-                        args
-                    );
+            try {
+                // Call the calculation method in the ContentProvider
+                Bundle result = getContentResolver().call(
+                    uri,
+                    METHOD_START_CALCULATION,
+                    null,
+                    args
+                );
 
-                    if (result != null) {
-                        String status = result.getString("status");
-                        String message = result.getString("message");
-                        currentRequestId = result.getString("request_id");
+                if (result != null) {
+                    String status = result.getString("status");
+                    String message = result.getString("message");
+                    currentRequestId = result.getString("request_id");
 
-                        resultTextView.setText(message + "\nStatus: " + status +
-                            "\nRequest ID: " + currentRequestId +
-                            "\nWaiting for result...");
+                    resultTextView.setText(message + "\nStatus: " + status +
+                        "\nRequest ID: " + currentRequestId +
+                        "\nWaiting for result...");
 
-                        // Register ContentObserver to get notified when result is ready
-                        registerResultObserver();
-                    } else {
-                        resultTextView.setText("No response from ContentProvider");
-                    }
-                } catch (Exception e) {
-                    resultTextView.setText("Error calling ContentProvider: " + e.getMessage());
-                    Toast.makeText(MainActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    // Register ContentObserver to get notified when result is ready
+                    registerResultObserver();
+                } else {
+                    resultTextView.setText("No response from ContentProvider");
                 }
+            } catch (Exception e) {
+                resultTextView.setText("Error calling ContentProvider: " + e.getMessage());
+                Toast.makeText(MainActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
             }
         });
     }

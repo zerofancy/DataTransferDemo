@@ -6,9 +6,6 @@ import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.CancellationSignal;
-import android.os.Handler;
-import android.os.Looper;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -23,16 +20,12 @@ public class AppAContentProvider extends ContentProvider {
     public static final String AUTHORITY = "top.ntutn.appa.provider";
     public static final Uri CONTENT_URI = Uri.parse("content://" + AUTHORITY + "/data");
 
-    // Method names for call() API
-    public static final String METHOD_GET_DATA = "get_data";
-    public static final String METHOD_GET_MESSAGE = "get_message";
     public static final String METHOD_START_CALCULATION = "start_calculation";
 
     // URI paths
     public static final String PATH_CALCULATION_RESULTS = "calculation_results";
 
     private ExecutorService executorService = Executors.newSingleThreadExecutor();
-    private Handler mainHandler = new Handler(Looper.getMainLooper());
 
     // Store calculation results (in a real app, use a database)
     private Map<String, Integer> calculationResults = new HashMap<>();
@@ -46,17 +39,7 @@ public class AppAContentProvider extends ContentProvider {
     @Nullable
     @Override
     public Bundle call(@NonNull String method, @Nullable String arg, @Nullable Bundle extras) {
-        if (METHOD_GET_DATA.equals(method)) {
-            Bundle result = new Bundle();
-            result.putString("message", "Hello from AppA ContentProvider via call() method!");
-            result.putString("data", "This is additional data from appA!");
-            result.putString("status", "success");
-            return result;
-        } else if (METHOD_GET_MESSAGE.equals(method)) {
-            Bundle result = new Bundle();
-            result.putString("message", "ContentProvider call() method is working!");
-            return result;
-        } else if (METHOD_START_CALCULATION.equals(method)) {
+        if (METHOD_START_CALCULATION.equals(method)) {
             // Simulate a complex calculation with uncertain delay
             int input = extras != null ? extras.getInt("input", 10) : 10;
 
