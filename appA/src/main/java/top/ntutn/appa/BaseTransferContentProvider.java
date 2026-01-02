@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.ParcelFileDescriptor;
 import android.util.Log;
 import android.util.Xml;
 
@@ -18,6 +19,7 @@ import androidx.annotation.Nullable;
 import org.xmlpull.v1.XmlSerializer;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -42,11 +44,6 @@ public abstract class BaseTransferContentProvider extends ContentProvider {
     private static final String FILE_LIST_FILE_NAME = ".file_list.xml";
     private static final String TAG_FILE = "file";
     private static final String TAG_ROOT = "list";
-    private static final String TAG_EXTERNAL_FILES = "external_files";
-    private static final String TAG_OBB = "obb";
-    private static final String TAG_FILES = "files";
-    private static final String TAG_NO_BACKUP = "no_backup";
-    private static final String TAG_DATA = "data";
     private static final String ATTR_BASE_DIR_NAME = "base";
     private static final String ATTR_FILE_PATH = "path";
     private static final String ATTR_ALGORITHM = "algorithm";
@@ -65,11 +62,18 @@ public abstract class BaseTransferContentProvider extends ContentProvider {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private List<TransferFileInfo> mTransferFileInfos = new ArrayList<>();
+    private Set<String> mValidPathTags = new HashSet<>();
 
     @Override
     public boolean onCreate() {
         // 配置要同步的路径
         mTransferFileInfos = gatherTransferFileInfos();
+        mValidPathTags = new HashSet<>();
+        for (TransferFileInfo info : mTransferFileInfos) {
+            mValidPathTags.add(info.getBaseDirTag());
+        }
+        // 清单文件被保存到files文件夹下
+        mValidPathTags.add(TransferFileInfo.TAG_FILES_DIR);
         return true;
     }
 
@@ -300,5 +304,30 @@ public abstract class BaseTransferContentProvider extends ContentProvider {
     public int update(@NonNull Uri uri, @Nullable ContentValues values, @Nullable String selection,
                       @Nullable String[] selectionArgs) {
         return 0;
+    }
+
+    @Nullable
+    @Override
+    public ParcelFileDescriptor openFile(@NonNull Uri uri, @NonNull String mode) throws FileNotFoundException {
+        if (mode.contains("w")) {
+            throw new SecurityException("Readonly assets.");
+        }
+        String basePathTag = uri.getQueryParameter("base");
+        String relativePath = uri.getQueryParameter("path");
+
+        if (basePathTag == null || relativePath == null) {
+            throw new FileNotFoundException("invalid request");
+        }
+
+        if (mValidPathTags.stream().noneMatch(basePathTag::equals)) {
+            throw new FileNotFoundException("request file base = " + basePathTag + " not in a valid path");
+        }
+
+        File dir = TransferFileInfo.getDirViaTag(getContext(), basePathTag);
+        if (dir == null) {
+            // should not reach here
+            throw new FileNotFoundException("request file base = " + basePathTag + " not found");
+        }
+        return ParcelFileDescriptor.open(new File(dir, relativePath), ParcelFileDescriptor.MODE_READ_ONLY);
     }
 }

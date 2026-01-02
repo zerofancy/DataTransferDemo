@@ -5,6 +5,8 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.ParcelFileDescriptor;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -15,11 +17,14 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
     private static final String METHOD_GATHER_FILE_LIST = "gather_file_list";
     private static final String AUTHORITY = "top.ntutn.appa.provider";
+    private static final Uri PROVIDER_URI = Uri.parse("content://" + AUTHORITY);
     private static final Uri CONTENT_FILE_LIST = Uri.parse("content://" + AUTHORITY + "/list");
 
     private Button button;
@@ -42,9 +47,6 @@ public class MainActivity extends AppCompatActivity {
         resultTextView = findViewById(R.id.resultTextView);
 
         button.setOnClickListener(v -> {
-            // Use call() method to request calculation from appA
-            Uri uri = Uri.parse("content://" + AUTHORITY);
-
             // Prepare input for the calculation
             Bundle args = new Bundle();
             Random random = new Random();
@@ -54,8 +56,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 // Call the calculation method in the ContentProvider
                 Bundle result = getContentResolver().call(
-                    uri,
-                        METHOD_GATHER_FILE_LIST,
+                    PROVIDER_URI, METHOD_GATHER_FILE_LIST,
                     null,
                     args
                 );
@@ -108,7 +109,13 @@ public class MainActivity extends AppCompatActivity {
             resultTextView.append("\n列表计算完毕");
             cleanup();
 
-            // todo
+            try {
+                InputStream inputStream = getContentResolver().openInputStream(PROVIDER_URI);
+                // todo 解析xml，并依次获取每一个文件
+                // todo 释放资源
+            } catch (FileNotFoundException e) {
+                Log.e("lhx", "read file list failed", e);
+            }
         }
     }
 
