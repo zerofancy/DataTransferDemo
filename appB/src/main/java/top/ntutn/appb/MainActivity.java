@@ -30,6 +30,14 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
 public class MainActivity extends AppCompatActivity {
+    private static final String TAG_FILE = "file";
+    private static final String TAG_ROOT = "list";
+    private static final String ATTR_BASE_DIR_NAME = "base";
+    private static final String ATTR_FILE_PATH = "path";
+    private static final String ATTR_ALGORITHM = "algorithm";
+    private static final String ATTR_CHECKSUM = "checksum";
+    private static final String ATTR_RETRY_TIMES = "retry_times";
+    private static final String ATTR_IMPORTANT = "important";
     private static final String METHOD_GATHER_FILE_LIST = "gather_file_list";
     private static final String AUTHORITY = "top.ntutn.appa.provider";
     private static final Uri PROVIDER_URI = Uri.parse("content://" + AUTHORITY);
@@ -128,14 +136,14 @@ public class MainActivity extends AppCompatActivity {
                     XmlPullParser parser = Xml.newPullParser();
                     parser.setInput(inputStream, "UTF-8");
 
-                    BlockingQueue<Optional<String>> taskQueue = new ArrayBlockingQueue<>(4);
+                    BlockingQueue<Optional<TransferFileInfo>> taskQueue = new ArrayBlockingQueue<>(4);
                     for (int i = 0; i < 4; i++) {
                         // 使用4个线程消费数据
                         Thread thread = new Thread(() -> {
                             while (true) {
                                 try {
-                                    Optional<String> data = taskQueue.take();
-                                    // 收到特殊终止标记
+                                    Optional<TransferFileInfo> data = taskQueue.take();
+                                    // 收到终止标记
                                     if (data.isEmpty()) {
                                         Log.d("lhx", Thread.currentThread().getName() + " exiting...");
                                         taskQueue.put(data);
@@ -159,12 +167,23 @@ public class MainActivity extends AppCompatActivity {
                             case XmlPullParser.START_TAG:
                                 if (currentTagName.equals("file")) {
                                     // 找到一个文件标签
-                                    String baseDirTag = parser.getAttributeValue(null, "base");
-                                    String path = parser.getAttributeValue(null, "path");
+                                    String baseDirTag = parser.getAttributeValue(null, ATTR_BASE_DIR_NAME);
+                                    String path = parser.getAttributeValue(null, ATTR_FILE_PATH);
+                                    String algorithm = parser.getAttributeValue(null, ATTR_ALGORITHM);
+                                    String checksum = parser.getAttributeValue(null, ATTR_CHECKSUM);
+                                    String retryTimesString = parser.getAttributeValue(null, ATTR_RETRY_TIMES);
+                                    int retryTimes = 0;
+                                    try {
+                                        retryTimes = Integer.parseInt(retryTimesString);
+                                    } catch (NumberFormatException ignored) {
+                                    }
+                                    String importantString = parser.getAttributeValue(null, ATTR_IMPORTANT);
+                                    boolean important = Boolean.parseBoolean(importantString);
 
+                                    TransferFileInfo info = new TransferFileInfo(baseDirTag, path, algorithm, checksum, retryTimes, important);
 
                                     try {
-                                        taskQueue.put(Optional.of(path));
+                                        taskQueue.put(Optional.of(info));
                                     } catch (InterruptedException ignored) {
                                     }
                                 }

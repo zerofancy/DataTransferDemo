@@ -71,4 +71,16 @@ public class TransferFileInfo {
     public boolean isImportant() {
         return important;
     }
+
+    @Override
+    public String toString() {
+        return "TransferFileInfo{" +
+                "baseDirTag='" + baseDirTag + '\'' +
+                ", relativePath='" + relativePath + '\'' +
+                ", algorithm='" + algorithm + '\'' +
+                ", checksum='" + checksum + '\'' +
+                ", retryTimes=" + retryTimes +
+                ", important=" + important +
+                '}';
+    }
 }
