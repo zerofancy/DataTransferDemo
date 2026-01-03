@@ -1,5 +1,6 @@
 package top.ntutn.appb;
 
+import android.content.Context;
 import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Bundle;
@@ -20,8 +21,10 @@ import androidx.core.view.WindowInsetsCompat;
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -114,63 +117,72 @@ public class MainActivity extends AppCompatActivity {
             resultTextView.append("\n列表计算完毕");
             cleanup();
 
-            Uri fileListUri = PROVIDER_URI.buildUpon()
-                    .appendQueryParameter("base", "files")
-                    .appendQueryParameter("path", ".file_list.xml")
-                    .build();
-            try (InputStream inputStream = getContentResolver().openInputStream(fileListUri)) {
-                XmlPullParser parser = Xml.newPullParser();
-                parser.setInput(inputStream, "UTF-8");
+            Context context = MainActivity.this;
+            // xml解析在一个单独线程，且会因等待文件传输阻塞
+            Thread xmlThread = new Thread(() -> {
+                Uri fileListUri = PROVIDER_URI.buildUpon()
+                        .appendQueryParameter("base", TransferFileInfo.TAG_FILES_DIR)
+                        .appendQueryParameter("path", ".file_list.xml")
+                        .build();
+                try (InputStream inputStream = getContentResolver().openInputStream(fileListUri)) {
+                    XmlPullParser parser = Xml.newPullParser();
+                    parser.setInput(inputStream, "UTF-8");
 
-                BlockingQueue<String> taskQueue = new ArrayBlockingQueue<>(4);
-                for (int i = 0; i < 4; i++) {
-                    // 使用4个线程消费数据
-                    Thread thread = new Thread(() -> {
-                        while (true) {
-                            try {
-                                String data = taskQueue.take();
-                                // 收到特殊终止标记
-                                if (data.equals("end_tag")) {
-                                    Log.d("lhx", Thread.currentThread().getName() + " exiting...");
-                                    taskQueue.put(data);
+                    BlockingQueue<Optional<String>> taskQueue = new ArrayBlockingQueue<>(4);
+                    for (int i = 0; i < 4; i++) {
+                        // 使用4个线程消费数据
+                        Thread thread = new Thread(() -> {
+                            while (true) {
+                                try {
+                                    Optional<String> data = taskQueue.take();
+                                    // 收到特殊终止标记
+                                    if (data.isEmpty()) {
+                                        Log.d("lhx", Thread.currentThread().getName() + " exiting...");
+                                        taskQueue.put(data);
+                                        break;
+                                    }
+                                    Log.d("lhx", Thread.currentThread().getName() + " received " + data.get());
+                                } catch (InterruptedException ignored) {
                                     break;
                                 }
-                                Log.d("lhx", Thread.currentThread().getName() + " received " + data);
-                            } catch (InterruptedException ignored) {
-                                break;
                             }
-                        }
-                    });
-                    thread.setName("consumer" + i);
-                    thread.start();
-                }
-
-                int eventType = parser.getEventType();
-                while (eventType != XmlPullParser.END_DOCUMENT) {
-                    String currentTagName = parser.getName();
-
-                    switch (eventType) {
-                        case XmlPullParser.START_TAG:
-                            if (currentTagName.equals("file")) {
-                                // 找到一个文件标签
-                                String path = parser.getAttributeValue(null, "path");
-                                try {
-                                    taskQueue.put(path);
-                                } catch (InterruptedException ignored) {
-                                }
-                            }
-                            break;
+                        });
+                        thread.setName("consumer" + i);
+                        thread.start();
                     }
 
-                    eventType = parser.next();
+                    int eventType = parser.getEventType();
+                    while (eventType != XmlPullParser.END_DOCUMENT) {
+                        String currentTagName = parser.getName();
+
+                        switch (eventType) {
+                            case XmlPullParser.START_TAG:
+                                if (currentTagName.equals("file")) {
+                                    // 找到一个文件标签
+                                    String baseDirTag = parser.getAttributeValue(null, "base");
+                                    String path = parser.getAttributeValue(null, "path");
+
+
+                                    try {
+                                        taskQueue.put(Optional.of(path));
+                                    } catch (InterruptedException ignored) {
+                                    }
+                                }
+                                break;
+                        }
+
+                        eventType = parser.next();
+                    }
+                    try {
+                        taskQueue.put(Optional.empty());
+                    } catch (InterruptedException ignored) {
+                    }
+                } catch (IOException | XmlPullParserException e) {
+                    Log.e("lhx", "read file list failed", e);
                 }
-                try {
-                    taskQueue.put("end_tag");
-                } catch (InterruptedException ignored) {
-                }
-            } catch (IOException | XmlPullParserException e) {
-                Log.e("lhx", "read file list failed", e);
-            }
+            });
+            xmlThread.setName("producer");
+            xmlThread.start();
         }
     }
 
