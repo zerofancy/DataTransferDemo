@@ -5,8 +5,8 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.ParcelFileDescriptor;
 import android.util.Log;
+import android.util.Xml;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -17,9 +17,14 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
-import java.io.FileNotFoundException;
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
+
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Random;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 
 public class MainActivity extends AppCompatActivity {
     private static final String METHOD_GATHER_FILE_LIST = "gather_file_list";
@@ -109,11 +114,61 @@ public class MainActivity extends AppCompatActivity {
             resultTextView.append("\n列表计算完毕");
             cleanup();
 
-            try {
-                InputStream inputStream = getContentResolver().openInputStream(PROVIDER_URI);
-                // todo 解析xml，并依次获取每一个文件
-                // todo 释放资源
-            } catch (FileNotFoundException e) {
+            Uri fileListUri = PROVIDER_URI.buildUpon()
+                    .appendQueryParameter("base", "files")
+                    .appendQueryParameter("path", ".file_list.xml")
+                    .build();
+            try (InputStream inputStream = getContentResolver().openInputStream(fileListUri)) {
+                XmlPullParser parser = Xml.newPullParser();
+                parser.setInput(inputStream, "UTF-8");
+
+                BlockingQueue<String> taskQueue = new ArrayBlockingQueue<>(4);
+                for (int i = 0; i < 4; i++) {
+                    // 使用4个线程消费数据
+                    Thread thread = new Thread(() -> {
+                        while (true) {
+                            try {
+                                String data = taskQueue.take();
+                                // 收到特殊终止标记
+                                if (data.equals("end_tag")) {
+                                    Log.d("lhx", Thread.currentThread().getName() + " exiting...");
+                                    taskQueue.put(data);
+                                    break;
+                                }
+                                Log.d("lhx", Thread.currentThread().getName() + " received " + data);
+                            } catch (InterruptedException ignored) {
+                                break;
+                            }
+                        }
+                    });
+                    thread.setName("consumer" + i);
+                    thread.start();
+                }
+
+                int eventType = parser.getEventType();
+                while (eventType != XmlPullParser.END_DOCUMENT) {
+                    String currentTagName = parser.getName();
+
+                    switch (eventType) {
+                        case XmlPullParser.START_TAG:
+                            if (currentTagName.equals("file")) {
+                                // 找到一个文件标签
+                                String path = parser.getAttributeValue(null, "path");
+                                try {
+                                    taskQueue.put(path);
+                                } catch (InterruptedException ignored) {
+                                }
+                            }
+                            break;
+                    }
+
+                    eventType = parser.next();
+                }
+                try {
+                    taskQueue.put("end_tag");
+                } catch (InterruptedException ignored) {
+                }
+            } catch (IOException | XmlPullParserException e) {
                 Log.e("lhx", "read file list failed", e);
             }
         }
