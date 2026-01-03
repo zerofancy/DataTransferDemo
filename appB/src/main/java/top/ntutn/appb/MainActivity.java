@@ -8,7 +8,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.util.Xml;
+import android.view.View;
 import android.widget.Button;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -32,6 +34,7 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG_FILE = "file";
@@ -49,8 +52,10 @@ public class MainActivity extends AppCompatActivity {
 
     private Button button;
     private TextView resultTextView;
+    private ScrollView scrollView;
     private String currentRequestId;
     private CalculationResultObserver resultObserver;
+    private long startTime;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,8 +70,16 @@ public class MainActivity extends AppCompatActivity {
 
         button = findViewById(R.id.button);
         resultTextView = findViewById(R.id.resultTextView);
+        scrollView = findViewById(R.id.scrollView);
 
         button.setOnClickListener(v -> {
+            // Delete all files in the app's files directory
+            File filesDir = getFilesDir();
+            deleteAllFiles(filesDir);
+
+            // Start timing
+            startTime = System.currentTimeMillis();
+
             // Prepare input for the calculation
             Bundle args = new Bundle();
             Random random = new Random();
@@ -88,7 +101,11 @@ public class MainActivity extends AppCompatActivity {
 
                     resultTextView.setText(message + "\nStatus: " + status +
                         "\nRequest ID: " + currentRequestId +
-                        "\nWaiting for result...");
+                        "\nWaiting for result...\nTransfer started at: " + new java.util.Date());
+                    // Scroll to the end of the text view
+                    resultTextView.post(() -> {
+                        scrollView.fullScroll(android.view.View.FOCUS_DOWN);
+                    });
 
                     // Register ContentObserver to get notified when result is ready
                     registerResultObserver();
@@ -119,6 +136,9 @@ public class MainActivity extends AppCompatActivity {
 
     // ContentObserver to listen for changes to the calculation result
     private class CalculationResultObserver extends ContentObserver {
+        private volatile int totalFiles = 0;
+        private volatile int processedFiles = 0;
+
         public CalculationResultObserver(Handler handler) {
             super(handler);
         }
@@ -127,6 +147,10 @@ public class MainActivity extends AppCompatActivity {
         public void onChange(boolean selfChange, Uri uri) {
             super.onChange(selfChange, uri);
             resultTextView.append("\n列表计算完毕");
+            // Scroll to the end of the text view
+            resultTextView.post(() -> {
+                scrollView.fullScroll(android.view.View.FOCUS_DOWN);
+            });
             cleanup();
 
             Context context = MainActivity.this;
@@ -136,6 +160,25 @@ public class MainActivity extends AppCompatActivity {
                         .appendQueryParameter("base", TransferFileInfo.TAG_FILES_DIR)
                         .appendQueryParameter("path", ".file_list.xml")
                         .build();
+                // First, count total files to transfer by parsing the XML once
+                int totalFileCount = 0;
+                try (InputStream countStream = getContentResolver().openInputStream(fileListUri)) {
+                    XmlPullParser countParser = Xml.newPullParser();
+                    countParser.setInput(countStream, "UTF-8");
+                    int eventType = countParser.getEventType();
+                    while (eventType != XmlPullParser.END_DOCUMENT) {
+                        if (eventType == XmlPullParser.START_TAG && countParser.getName().equals("file")) {
+                            totalFileCount++;
+                        }
+                        eventType = countParser.next();
+                    }
+                } catch (XmlPullParserException | IOException e) {
+                    Log.e("lhx", "Failed to count files", e);
+                    totalFileCount = 0; // fallback
+                }
+
+                CountDownLatch latch = new CountDownLatch(totalFileCount);
+
                 try (InputStream inputStream = getContentResolver().openInputStream(fileListUri)) {
                     XmlPullParser parser = Xml.newPullParser();
                     parser.setInput(inputStream, "UTF-8");
@@ -153,7 +196,7 @@ public class MainActivity extends AppCompatActivity {
                                         taskQueue.put(data);
                                         break;
                                     }
-                                    Log.d("lhx", Thread.currentThread().getName() + " received " + data.get());
+                                    Log.d("lhx", Thread.currentThread().getName() + " received " + data);
 
                                     Uri fileUri = PROVIDER_URI.buildUpon()
                                             .appendQueryParameter("base", data.get().getBaseDirTag())
@@ -181,8 +224,23 @@ public class MainActivity extends AppCompatActivity {
                                         Log.e("lhx", data + " transfer error", e);
                                         // todo 如果重试，可以再次塞到队列里
                                         continue;
+                                    } finally {
+                                        // Count down latch and update progress
+                                        latch.countDown();
+                                        processedFiles++;
+                                        int currentProgress = processedFiles;
+
+                                        // Update UI with progress
+                                        runOnUiThread(() -> {
+                                            resultTextView.append("\nTransferred: " + currentProgress + " files");
+                                            // Scroll to the end of the text view
+                                            resultTextView.post(() -> {
+                                                scrollView.fullScroll(android.view.View.FOCUS_DOWN);
+                                            });
+                                        });
                                     }
-                                } catch (InterruptedException ignored) {
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
                                     break;
                                 }
                             }
@@ -216,7 +274,9 @@ public class MainActivity extends AppCompatActivity {
 
                                     try {
                                         taskQueue.put(Optional.of(info));
-                                    } catch (InterruptedException ignored) {
+                                    } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                        break;
                                     }
                                 }
                                 break;
@@ -224,11 +284,33 @@ public class MainActivity extends AppCompatActivity {
 
                         eventType = parser.next();
                     }
+
                     try {
                         taskQueue.put(Optional.empty());
-                    } catch (InterruptedException ignored) {
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                     }
-                } catch (IOException | XmlPullParserException e) {
+
+                    // Wait for all files to be transferred
+                    latch.await();
+
+                    // All files transferred, calculate and display elapsed time
+                    long endTime = System.currentTimeMillis();
+                    long elapsedTime = endTime - startTime;
+                    double seconds = elapsedTime / 1000.0;
+                    int finalTotalFileCount = totalFileCount;
+                    runOnUiThread(() -> {
+                        resultTextView.append("\nFile transfer completed!");
+                        resultTextView.append("\nTotal files: " + finalTotalFileCount);
+                        resultTextView.append("\nTotal time: " + seconds + " seconds");
+                        // Scroll to the end of the text view after adding completion message
+                        resultTextView.post(() -> {
+                            scrollView.fullScroll(android.view.View.FOCUS_DOWN);
+                        });
+                        finalCleanup(); // Use final cleanup to re-enable the button
+                    });
+
+                } catch (IOException | XmlPullParserException | InterruptedException e) {
                     Log.e("lhx", "read file list failed", e);
                 }
             });
@@ -257,9 +339,39 @@ public class MainActivity extends AppCompatActivity {
             resultObserver = null;
         }
 
-        // Re-enable the button
+        // Note: Don't re-enable the button here since file transfer might still be ongoing
+        // The button gets re-enabled after file transfer completes in the UI thread
+    }
+
+    private void finalCleanup() {
+        // Unregister the observer
+        if (resultObserver != null) {
+            getContentResolver().unregisterContentObserver(resultObserver);
+            resultObserver = null;
+        }
+
+        // Re-enable the button after transfer completes
         button.setEnabled(true);
         button.setText("Access AppA ContentProvider");
+    }
+
+    private void deleteAllFiles(File dir) {
+        if (dir == null || !dir.exists()) {
+            return;
+        }
+
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    deleteAllFiles(file); // Recursive call for subdirectories
+                } else {
+                    file.delete(); // Delete the file
+                }
+            }
+            // Optionally clear the directory itself if needed
+            // Note: The directory itself is not deleted, just its contents
+        }
     }
 
     @Override
