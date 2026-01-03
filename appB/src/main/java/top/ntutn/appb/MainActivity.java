@@ -22,8 +22,12 @@ import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -150,6 +154,34 @@ public class MainActivity extends AppCompatActivity {
                                         break;
                                     }
                                     Log.d("lhx", Thread.currentThread().getName() + " received " + data.get());
+
+                                    Uri fileUri = PROVIDER_URI.buildUpon()
+                                            .appendQueryParameter("base", data.get().getBaseDirTag())
+                                            .appendQueryParameter("path", data.get().getRelativePath())
+                                            .build();
+                                    try (InputStream ins = context.getContentResolver().openInputStream(fileUri)) {
+                                        File targetDir = TransferFileInfo.getDirViaTag(context, data.get().getBaseDirTag());
+                                        String relativePath = data.get().getRelativePath();
+                                        if (ins == null || targetDir == null || relativePath == null) {
+                                            throw new IOException("Illegal params");
+                                        }
+                                        File targetFile = new File(targetDir, relativePath);
+                                        File parentDir = targetFile.getParentFile();
+                                        // fixme 多线程创建文件夹可能导致失败
+                                        if (parentDir == null || (!parentDir.exists() && !parentDir.mkdirs())) {
+                                            throw new IOException("Create dir error " + parentDir);
+                                        }
+                                        targetFile.createNewFile();
+
+                                        try (FileOutputStream fos = new FileOutputStream(targetFile)) {
+                                            transferTo(ins, fos);
+                                        }
+
+                                    } catch (IOException e) {
+                                        Log.e("lhx", data + " transfer error", e);
+                                        // todo 如果重试，可以再次塞到队列里
+                                        continue;
+                                    }
                                 } catch (InterruptedException ignored) {
                                     break;
                                 }
@@ -202,6 +234,19 @@ public class MainActivity extends AppCompatActivity {
             });
             xmlThread.setName("producer");
             xmlThread.start();
+        }
+
+        private long transferTo(InputStream in, OutputStream out) throws IOException {
+            Objects.requireNonNull(out, "out");
+            long transferred = 0;
+            int DEFAULT_BUFFER_SIZE = 8192;
+            byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
+            int read;
+            while ((read = in.read(buffer, 0, DEFAULT_BUFFER_SIZE)) >= 0) {
+                out.write(buffer, 0, read);
+                transferred += read;
+            }
+            return transferred;
         }
     }
 
